@@ -27,7 +27,7 @@ val TASKS = listOf(
     Task("minoxidil", "Minoxidil 5%", "On a dry scalp, leave it on", SCALP),
     Task("massage", "Scalp massage", "4 minutes, fingertips, firm circles", SCALP),
     Task("keto", "Ketoconazole shampoo", "Lather, leave 3–5 min, rinse", SCALP) { it.dayOfWeek in setOf(MONDAY, THURSDAY) },
-    Task("photos", "Progress photos", "Crown, hairline and top. Same spot, same light.", SCALP) { it.dayOfMonth == 1 },
+    Task("photos", "Progress photos", "3 shots: crown, hairline, top. Same spot, same light.", SCALP) { it.dayOfMonth == 1 },
 )
 
 fun tasksFor(date: LocalDate) = TASKS.filter { it.due(date) }

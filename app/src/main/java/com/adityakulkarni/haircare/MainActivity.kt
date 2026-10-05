@@ -2,11 +2,19 @@ package com.adityakulkarni.haircare
 
 import android.Manifest
 import android.appwidget.AppWidgetManager
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.ContentValues
+import android.content.Context
+import android.net.Uri
+import android.provider.MediaStore
+import android.widget.Toast
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -70,6 +78,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -117,6 +126,18 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private val PHOTO_ANGLES = listOf("crown", "hairline", "top")
+
+/** A new entry in the Pictures/RootCause album for the camera to write into; null if the store refuses. */
+private fun newPhotoUri(c: Context, angle: String): Uri? = c.contentResolver.insert(
+    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+    ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "scalp-${LocalDate.now()}-$angle.jpg")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/RootCause")
+    },
+)
+
 private fun iconFor(id: String): ImageVector = when (id) {
     "workout" -> Icons.Rounded.FitnessCenter
     "meditate" -> Icons.Rounded.SelfImprovement
@@ -159,6 +180,44 @@ private fun Screen(tick: Int, changed: () -> Unit) {
         updateWidgets(c)
     }
 
+    // Progress photos: camera opens once per angle, shots land in Pictures/RootCause.
+    // Saveable so a rotation or process death while the camera is open doesn't lose our place.
+    var shot by rememberSaveable { mutableIntStateOf(-1) }
+    var pending by rememberSaveable { mutableStateOf<String?>(null) }
+    var startShot: (Int) -> Unit = {}
+    fun finishPhotos(taken: Boolean) {
+        shot = -1
+        pending = null
+        if (taken && "photos" !in Store.checked(c)) toggle("photos")
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        if (!ok) {
+            pending?.let { c.contentResolver.delete(Uri.parse(it), null, null) } // drop the empty entry
+            finishPhotos(taken = shot > 0)
+        } else if (shot < PHOTO_ANGLES.lastIndex) {
+            startShot(shot + 1)
+        } else {
+            finishPhotos(taken = true)
+        }
+    }
+    startShot = { i ->
+        val uri = newPhotoUri(c, PHOTO_ANGLES[i])
+        if (uri == null) {
+            finishPhotos(taken = i > 0)
+        } else {
+            shot = i
+            pending = uri.toString()
+            Toast.makeText(c, "Photo ${i + 1} of ${PHOTO_ANGLES.size}: ${PHOTO_ANGLES[i]}", Toast.LENGTH_LONG).show()
+            try {
+                camera.launch(uri)
+            } catch (e: ActivityNotFoundException) {
+                c.contentResolver.delete(uri, null, null)
+                Toast.makeText(c, "No camera app found", Toast.LENGTH_SHORT).show()
+                finishPhotos(taken = i > 0)
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(p.bg)) {
         Column(
             Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())
@@ -173,7 +232,11 @@ private fun Screen(tick: Int, changed: () -> Unit) {
                 if (items.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         SectionLabel(group)
-                        items.forEach { t -> TaskCard(t, t.id in checked) { toggle(t.id) } }
+                        items.forEach { t ->
+                            TaskCard(t, t.id in checked) {
+                                if (t.id == "photos" && t.id !in checked) startShot(0) else toggle(t.id)
+                            }
+                        }
                     }
                 }
             }

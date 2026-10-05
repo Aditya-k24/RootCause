@@ -1,3 +1,10 @@
+import java.util.Properties
+
+// Release signing comes from local.properties (gitignored); the keystore lives outside the repo.
+val localProps = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -13,6 +20,24 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+    }
+    signingConfigs {
+        localProps.getProperty("RELEASE_STORE_FILE")?.let { path ->
+            create("release") {
+                storeFile = file(path)
+                storePassword = localProps.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = localProps.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = localProps.getProperty("RELEASE_STORE_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+            isMinifyEnabled = true // the icons-extended pack is ~40 MB unshrunk
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

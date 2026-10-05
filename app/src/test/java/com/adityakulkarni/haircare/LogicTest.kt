@@ -34,6 +34,13 @@ class LogicTest {
         assertEquals(8, tasksFor(mon.plusDays(3)).size)
     }
 
+    @Test fun photosOnFirstOfMonth() {
+        val oct1 = LocalDate.of(2026, 10, 1) // a Thursday: keto + photos
+        assertEquals(true, tasksFor(oct1).any { it.id == "photos" })
+        assertEquals(9, tasksFor(oct1).size)
+        assertEquals(false, tasksFor(oct1.plusDays(1)).any { it.id == "photos" })
+    }
+
     @Test fun nextSlotWraps() {
         assertEquals(mon.atTime(8, 0), nextSlot(mon.atTime(7, 0)))
         assertEquals(mon.atTime(20, 0), nextSlot(mon.atTime(8, 0)))

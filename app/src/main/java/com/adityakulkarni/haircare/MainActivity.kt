@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Medication
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Shower
 import androidx.compose.material.icons.rounded.Spa
@@ -122,6 +123,7 @@ private fun iconFor(id: String): ImageVector = when (id) {
     "minoxidil" -> Icons.Rounded.WaterDrop
     "massage" -> Icons.Rounded.Spa
     "keto" -> Icons.Rounded.Shower
+    "photos" -> Icons.Rounded.PhotoCamera
     else -> Icons.Rounded.Medication
 }
 

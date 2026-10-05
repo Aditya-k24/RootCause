@@ -1,6 +1,5 @@
 package com.adityakulkarni.haircare
 
-import java.time.DayOfWeek
 import java.time.DayOfWeek.MONDAY
 import java.time.DayOfWeek.THURSDAY
 import java.time.LocalDate
@@ -12,7 +11,7 @@ data class Task(
     val label: String,
     val hint: String,
     val group: String,
-    val days: Set<DayOfWeek> = DayOfWeek.entries.toSet(),
+    val due: (LocalDate) -> Boolean = { true },
 )
 
 const val MORNING = "Morning routine"
@@ -27,10 +26,11 @@ val TASKS = listOf(
     Task("meditate", "Meditate 15 min", "Lower stress, less shedding", MORNING),
     Task("minoxidil", "Minoxidil 5%", "On a dry scalp, leave it on", SCALP),
     Task("massage", "Scalp massage", "4 minutes, fingertips, firm circles", SCALP),
-    Task("keto", "Ketoconazole shampoo", "Lather, leave 3–5 min, rinse", SCALP, setOf(MONDAY, THURSDAY)),
+    Task("keto", "Ketoconazole shampoo", "Lather, leave 3–5 min, rinse", SCALP) { it.dayOfWeek in setOf(MONDAY, THURSDAY) },
+    Task("photos", "Progress photos", "Crown, hairline and top. Same spot, same light.", SCALP) { it.dayOfMonth == 1 },
 )
 
-fun tasksFor(date: LocalDate) = TASKS.filter { date.dayOfWeek in it.days }
+fun tasksFor(date: LocalDate) = TASKS.filter { it.due(date) }
 
 /** Consecutive completed days ending today, or yesterday if today isn't done yet (streak still alive). */
 fun streak(done: Set<LocalDate>, today: LocalDate): Int {

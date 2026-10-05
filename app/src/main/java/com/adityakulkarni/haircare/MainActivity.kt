@@ -63,7 +63,13 @@ import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.LocalDrink
 import androidx.compose.material.icons.rounded.Medication
+import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.Shower
@@ -71,6 +77,7 @@ import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -121,6 +128,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        Store.syncToday(this) // new day or rest day since we were last open
         tick++
         updateWidgets(this)
     }
@@ -138,13 +146,18 @@ private fun newPhotoUri(c: Context, angle: String): Uri? = c.contentResolver.ins
     },
 )
 
-private fun iconFor(id: String): ImageVector = when (id) {
+internal fun iconFor(key: String): ImageVector = when (key) {
     "workout" -> Icons.Rounded.FitnessCenter
     "meditate" -> Icons.Rounded.SelfImprovement
-    "minoxidil" -> Icons.Rounded.WaterDrop
-    "massage" -> Icons.Rounded.Spa
-    "keto" -> Icons.Rounded.Shower
-    "photos" -> Icons.Rounded.PhotoCamera
+    "drop" -> Icons.Rounded.WaterDrop
+    "spa" -> Icons.Rounded.Spa
+    "shower" -> Icons.Rounded.Shower
+    "camera" -> Icons.Rounded.PhotoCamera
+    "food" -> Icons.Rounded.Restaurant
+    "water" -> Icons.Rounded.LocalDrink
+    "sleep" -> Icons.Rounded.Bedtime
+    "heart" -> Icons.Rounded.Favorite
+    "check" -> Icons.Rounded.TaskAlt
     else -> Icons.Rounded.Medication
 }
 
@@ -154,6 +167,7 @@ private fun Screen(tick: Int, changed: () -> Unit) {
     val p = LocalPalette.current
     val haptics = LocalHapticFeedback.current
     var celebrate by remember { mutableStateOf(false) }
+    var editingRoutine by rememberSaveable { mutableStateOf(false) }
 
     tick // read so the screen recomposes when it changes
     val today = LocalDate.now()
@@ -161,7 +175,7 @@ private fun Screen(tick: Int, changed: () -> Unit) {
     val doneDays = Store.doneDays(c)
     val done = today in doneDays
     val streak = streak(doneDays, today)
-    val tasks = tasksFor(today)
+    val tasks = Store.tasksToday(c)
     val u = urgency(done, LocalTime.now())
 
     fun toggle(id: String) {
@@ -184,11 +198,14 @@ private fun Screen(tick: Int, changed: () -> Unit) {
     // Saveable so a rotation or process death while the camera is open doesn't lose our place.
     var shot by rememberSaveable { mutableIntStateOf(-1) }
     var pending by rememberSaveable { mutableStateOf<String?>(null) }
+    var photoTask by rememberSaveable { mutableStateOf<String?>(null) } // which camera task is being shot
     var startShot: (Int) -> Unit = {}
     fun finishPhotos(taken: Boolean) {
         shot = -1
         pending = null
-        if (taken && "photos" !in Store.checked(c)) toggle("photos")
+        val id = photoTask
+        photoTask = null
+        if (taken && id != null && id !in Store.checked(c)) toggle(id)
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         if (!ok) {
@@ -218,23 +235,38 @@ private fun Screen(tick: Int, changed: () -> Unit) {
         }
     }
 
+    fun openEditor() {
+        Store.markIntroSeen(c)
+        editingRoutine = true
+    }
+    if (editingRoutine) {
+        RoutineEditor(onClose = { editingRoutine = false; changed() })
+        return
+    }
+
     Box(Modifier.fillMaxSize().background(p.bg)) {
         Column(
             Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Header(today)
+            Header(today, ::openEditor)
+            if (!Store.introSeen(c)) IntroCard(::openEditor)
             Hero(u, streak, doneDays, today)
             TodayProgress(tasks.count { it.id in checked }, tasks.size)
-            listOf(MORNING, SCALP).forEach { group ->
+            GROUPS.forEach { group ->
                 val items = tasks.filter { it.group == group }
                 if (items.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         SectionLabel(group)
                         items.forEach { t ->
                             TaskCard(t, t.id in checked) {
-                                if (t.id == "photos" && t.id !in checked) startShot(0) else toggle(t.id)
+                                if (t.camera && t.id !in checked) {
+                                    photoTask = t.id
+                                    startShot(0)
+                                } else {
+                                    toggle(t.id)
+                                }
                             }
                         }
                     }
@@ -251,14 +283,43 @@ private fun Screen(tick: Int, changed: () -> Unit) {
 }
 
 @Composable
-private fun Header(today: LocalDate) {
+private fun Header(today: LocalDate, onEdit: () -> Unit) {
     val p = LocalPalette.current
-    Column(Modifier.padding(top = 4.dp)) {
-        Text("RootCause", style = MaterialTheme.typography.headlineMedium, color = p.text)
-        Text(
-            today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")),
-            style = MaterialTheme.typography.bodyMedium, color = p.textMuted,
-        )
+    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("RootCause", style = MaterialTheme.typography.headlineMedium, color = p.text)
+            Text(
+                today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")),
+                style = MaterialTheme.typography.bodyMedium, color = p.textMuted,
+            )
+        }
+        IconButton(onEdit, Modifier.size(48.dp).clip(CircleShape).background(p.muted)) {
+            Icon(Icons.Rounded.Edit, "Edit routine", tint = p.text)
+        }
+    }
+}
+
+/** Shown until the routine editor is first opened, so friends know the routine is theirs to change. */
+@Composable
+private fun IntroCard(onEdit: () -> Unit) {
+    val p = LocalPalette.current
+    val interaction = remember { MutableInteractionSource() }
+    Chunky(
+        p.morningTint, p.amber.copy(alpha = 0.5f),
+        Modifier.fillMaxWidth().clickable(interaction, null, role = Role.Button, onClick = onEdit),
+        interaction = interaction,
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Edit, null, tint = p.amberLip)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Make it yours", style = MaterialTheme.typography.titleMedium, color = p.text)
+                Text(
+                    "This is a suggested routine. Tap to add, remove or reschedule tasks.",
+                    style = MaterialTheme.typography.bodyMedium, color = p.textMuted,
+                )
+            }
+        }
     }
 }
 
@@ -339,6 +400,13 @@ private fun WeekDot(d: LocalDate, done: Boolean, isToday: Boolean, beforeStart: 
 @Composable
 private fun TodayProgress(done: Int, total: Int) {
     val p = LocalPalette.current
+    if (total == 0) {
+        Column {
+            Text("Today", style = MaterialTheme.typography.headlineMedium, color = p.text)
+            Text("Nothing due today. Rest day, streak safe.", style = MaterialTheme.typography.bodyMedium, color = p.textMuted)
+        }
+        return
+    }
     val complete = done == total
     val fraction by animateFloatAsState(done / total.toFloat(), spring(stiffness = Spring.StiffnessLow), label = "progress")
     val bar by animateColorAsState(if (complete) p.green else p.amber, label = "bar")
@@ -373,7 +441,7 @@ private fun TodayProgress(done: Int, total: Int) {
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+internal fun SectionLabel(text: String) {
     Text(
         text.uppercase(), style = MaterialTheme.typography.labelSmall, color = LocalPalette.current.textMuted,
         modifier = Modifier.padding(start = 4.dp, top = 4.dp),
@@ -382,7 +450,7 @@ private fun SectionLabel(text: String) {
 
 /** Card with a darker bottom "lip" that squashes when pressed, the tactile Duolingo look. */
 @Composable
-private fun Chunky(
+internal fun Chunky(
     face: Color,
     lip: Color,
     modifier: Modifier = Modifier,
@@ -424,7 +492,7 @@ private fun TaskCard(t: Task, on: Boolean, onToggle: () -> Unit) {
             Box(
                 Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(if (on) p.green.copy(alpha = 0.18f) else tint),
                 contentAlignment = Alignment.Center,
-            ) { Icon(iconFor(t.id), null, tint = if (on) p.greenLip else ink, modifier = Modifier.size(26.dp)) }
+            ) { Icon(iconFor(t.icon), null, tint = if (on) p.greenLip else ink, modifier = Modifier.size(26.dp)) }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(t.label, style = MaterialTheme.typography.titleMedium, color = if (on) p.textMuted else p.text)

@@ -33,19 +33,20 @@ object Reminders {
     fun notifyIfNeeded(c: Context) {
         val hour = LocalDateTime.now().hour
         if (hour == 0 || Store.isDoneToday(c)) return
-        val n = tasksFor(LocalDate.now()).count { it.id !in Store.checked(c) }
+        val open = Store.tasksToday(c).filter { it.id !in Store.checked(c) }
+        val n = open.size
         val left = if (n == 1) "1 task" else "$n tasks"
         val s = Store.streak(c)
         val streakText = if (s == 0) "your streak" else "your $s-day streak"
         val (title, body) = when {
-            hour < 12 -> "Good morning ☀️" to "$left to go today. Start with your vitamins 💊"
+            hour < 12 -> "Good morning ☀️" to "$left to go today. Start with: ${open.firstOrNull()?.label}"
             hour < 22 -> "🔥 Don't lose $streakText!" to "$left left. Don't let your hair down."
             hour < 23 -> "⏳ 2 hours left" to "$left left to save $streakText."
             else -> "🚨 LAST CHANCE" to "Midnight is coming for $streakText. $left left!"
         }
         val nm = c.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("streak", "Streak reminders", NotificationManager.IMPORTANCE_HIGH))
-        val open = PendingIntent.getActivity(
+        val tap = PendingIntent.getActivity(
             c, 0, Intent(c, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
         nm.notify(
@@ -54,7 +55,7 @@ object Reminders {
                 .setSmallIcon(R.drawable.ic_flame)
                 .setContentTitle(title)
                 .setContentText(body)
-                .setContentIntent(open)
+                .setContentIntent(tap)
                 .setAutoCancel(true)
                 .build(),
         )
@@ -66,6 +67,7 @@ object Reminders {
 /** Fires at each slot; also re-arms after reboot / app update (alarms don't survive those). */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, intent: Intent) {
+        Store.syncToday(c) // the 00:01 run marks rest days (nothing due) as done
         if (intent.action == Reminders.ACTION) Reminders.notifyIfNeeded(c)
         updateWidgets(c)
         Reminders.scheduleNext(c)

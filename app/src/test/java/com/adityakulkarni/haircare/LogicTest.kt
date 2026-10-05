@@ -29,16 +29,16 @@ class LogicTest {
     }
 
     @Test fun ketoOnlyMonThu() {
-        assertEquals(8, tasksFor(mon).size)
-        assertEquals(7, tasksFor(mon.plusDays(1)).size)
-        assertEquals(8, tasksFor(mon.plusDays(3)).size)
+        assertEquals(8, tasksFor(DEFAULT_ROUTINE, mon).size)
+        assertEquals(7, tasksFor(DEFAULT_ROUTINE, mon.plusDays(1)).size)
+        assertEquals(8, tasksFor(DEFAULT_ROUTINE, mon.plusDays(3)).size)
     }
 
     @Test fun photosOnFirstOfMonth() {
         val oct1 = LocalDate.of(2026, 10, 1) // a Thursday: keto + photos
-        assertEquals(true, tasksFor(oct1).any { it.id == "photos" })
-        assertEquals(9, tasksFor(oct1).size)
-        assertEquals(false, tasksFor(oct1.plusDays(1)).any { it.id == "photos" })
+        assertEquals(true, tasksFor(DEFAULT_ROUTINE, oct1).any { it.id == "photos" })
+        assertEquals(9, tasksFor(DEFAULT_ROUTINE, oct1).size)
+        assertEquals(false, tasksFor(DEFAULT_ROUTINE, oct1.plusDays(1)).any { it.id == "photos" })
     }
 
     @Test fun nextSlotWraps() {
@@ -59,5 +59,17 @@ class LogicTest {
         assertEquals(3, nextMilestone(0)!!.day)
         assertEquals(14, nextMilestone(7)!!.day)
         assertEquals(null, nextMilestone(365))
+    }
+
+    @Test fun routineJsonRoundTrip() {
+        assertEquals(DEFAULT_ROUTINE, decodeRoutine(encodeRoutine(DEFAULT_ROUTINE)))
+    }
+
+    @Test fun scheduleText() {
+        assertEquals("Every day", describe(Schedule()))
+        assertEquals("Mon, Thu", describe(Schedule(setOf(java.time.DayOfWeek.THURSDAY, java.time.DayOfWeek.MONDAY))))
+        assertEquals("Monthly on the 1st", describe(Schedule(monthDay = 1)))
+        assertEquals("11th", ordinal(11))
+        assertEquals("22nd", ordinal(22))
     }
 }

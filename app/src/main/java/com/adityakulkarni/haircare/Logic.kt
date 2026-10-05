@@ -1,36 +1,98 @@
 package com.adityakulkarni.haircare
 
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.DayOfWeek
 import java.time.DayOfWeek.MONDAY
 import java.time.DayOfWeek.THURSDAY
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
+/** When a task is due: on [weekdays], or only on day [monthDay] of each month when that's set. */
+data class Schedule(val weekdays: Set<DayOfWeek> = DayOfWeek.entries.toSet(), val monthDay: Int? = null) {
+    fun isDue(date: LocalDate) = monthDay?.let { date.dayOfMonth == it } ?: (date.dayOfWeek in weekdays)
+}
+
 data class Task(
     val id: String,
     val label: String,
     val hint: String,
     val group: String,
-    val due: (LocalDate) -> Boolean = { true },
+    val icon: String,
+    val schedule: Schedule = Schedule(),
+    val camera: Boolean = false, // ticking opens the camera for progress shots
 )
 
-const val MORNING = "Morning routine"
+const val MORNING = "Morning"
 const val SCALP = "Scalp care"
+const val EVENING = "Evening"
+const val ANYTIME = "Anytime"
+val GROUPS = listOf(MORNING, SCALP, EVENING, ANYTIME)
 
-// ponytail: hardcoded routine, add an edit screen if the routine changes often
-val TASKS = listOf(
-    Task("d3", "Vitamin D3", "With a meal that has some fat", MORNING),
-    Task("b12", "Vitamin B12", "Any time, with or without food", MORNING),
-    Task("iron", "Iron", "With vitamin C, away from tea and coffee", MORNING),
-    Task("workout", "Morning workout", "Get the blood flowing", MORNING),
-    Task("meditate", "Meditate 15 min", "Lower stress, less shedding", MORNING),
-    Task("minoxidil", "Minoxidil 5%", "On a dry scalp, leave it on", SCALP),
-    Task("massage", "Scalp massage", "4 minutes, fingertips, firm circles", SCALP),
-    Task("keto", "Ketoconazole shampoo", "Lather, leave 3–5 min, rinse", SCALP) { it.dayOfWeek in setOf(MONDAY, THURSDAY) },
-    Task("photos", "Progress photos", "3 shots: crown, hairline, top. Same spot, same light.", SCALP) { it.dayOfMonth == 1 },
+/** Icon keys the editor offers; MainActivity maps them to vectors. */
+val ICONS = listOf("pill", "workout", "meditate", "drop", "spa", "shower", "camera", "food", "water", "sleep", "heart", "check")
+
+/** Suggested starting routine (the author's own); everyone can edit it in the app. */
+val DEFAULT_ROUTINE = listOf(
+    Task("d3", "Vitamin D3", "With a meal that has some fat", MORNING, "pill"),
+    Task("b12", "Vitamin B12", "Any time, with or without food", MORNING, "pill"),
+    Task("iron", "Iron", "With vitamin C, away from tea and coffee", MORNING, "pill"),
+    Task("workout", "Morning workout", "Get the blood flowing", MORNING, "workout"),
+    Task("meditate", "Meditate 15 min", "Lower stress, less shedding", MORNING, "meditate"),
+    Task("minoxidil", "Minoxidil 5%", "On a dry scalp, leave it on", SCALP, "drop"),
+    Task("massage", "Scalp massage", "4 minutes, fingertips, firm circles", SCALP, "spa"),
+    Task("keto", "Ketoconazole shampoo", "Lather, leave 3–5 min, rinse", SCALP, "shower", Schedule(setOf(MONDAY, THURSDAY))),
+    Task(
+        "photos", "Progress photos", "3 shots: crown, hairline, top. Same spot, same light.", SCALP, "camera",
+        Schedule(monthDay = 1), camera = true,
+    ),
 )
 
-fun tasksFor(date: LocalDate) = TASKS.filter { it.due(date) }
+fun tasksFor(routine: List<Task>, date: LocalDate) = routine.filter { it.schedule.isDue(date) }
+
+fun describe(s: Schedule): String = when {
+    s.monthDay != null -> "Monthly on the ${ordinal(s.monthDay)}"
+    s.weekdays.size == 7 -> "Every day"
+    s.weekdays.isEmpty() -> "Never"
+    else -> DayOfWeek.entries.filter { it in s.weekdays }
+        .joinToString(", ") { it.name.take(3).lowercase().replaceFirstChar(Char::uppercase) }
+}
+
+fun ordinal(n: Int) = "$n" + when {
+    n % 100 in 11..13 -> "th"
+    n % 10 == 1 -> "st"
+    n % 10 == 2 -> "nd"
+    n % 10 == 3 -> "rd"
+    else -> "th"
+}
+
+fun encodeRoutine(routine: List<Task>): String = JSONArray(
+    routine.map { t ->
+        JSONObject()
+            .put("id", t.id).put("label", t.label).put("hint", t.hint).put("group", t.group).put("icon", t.icon)
+            .put("weekdays", JSONArray(t.schedule.weekdays.map { it.name }))
+            .put("monthDay", t.schedule.monthDay ?: JSONObject.NULL)
+            .put("camera", t.camera)
+    },
+).toString()
+
+fun decodeRoutine(json: String): List<Task> {
+    val a = JSONArray(json)
+    return (0 until a.length()).map { i ->
+        val o = a.getJSONObject(i)
+        val days = o.getJSONArray("weekdays")
+        Task(
+            o.getString("id"), o.getString("label"), o.optString("hint"), o.optString("group", ANYTIME),
+            o.optString("icon", "check"),
+            Schedule(
+                (0 until days.length()).map { DayOfWeek.valueOf(days.getString(it)) }.toSet(),
+                if (o.isNull("monthDay")) null else o.getInt("monthDay"),
+            ),
+            o.optBoolean("camera"),
+        )
+    }
+}
 
 /** Consecutive completed days ending today, or yesterday if today isn't done yet (streak still alive). */
 fun streak(done: Set<LocalDate>, today: LocalDate): Int {
